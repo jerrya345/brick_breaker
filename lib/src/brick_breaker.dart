@@ -8,9 +8,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'components/components.dart';
+import 'components/power_up.dart';
 import 'config.dart';
 import 'models/level.dart';
 import 'models/ball_skin.dart';
+import 'models/power_up_type.dart';
 import 'services/game_storage.dart';
 import 'services/music_service.dart';
 
@@ -37,6 +39,12 @@ class BrickBreaker extends FlameGame
   Level? _currentLevelData;
   BallSkin? _currentSkin;
   async.Timer? _timer;
+  
+  // Power-ups activos
+  bool _curvedBatActive = false;
+  async.Timer? _curvedBatTimer;
+  bool _extendedBatActive = false;
+  async.Timer? _extendedBatTimer;
   
   double get width => size.x;
   double get height => size.y;
@@ -111,6 +119,13 @@ class BrickBreaker extends FlameGame
     world.removeAll(world.children.query<Bat>());
     world.removeAll(world.children.query<Brick>());
     world.removeAll(world.children.query<Enemy>());
+    world.removeAll(world.children.query<PowerUp>());
+    
+    // Resetear power-ups
+    _curvedBatActive = false;
+    _extendedBatActive = false;
+    _curvedBatTimer?.cancel();
+    _extendedBatTimer?.cancel();
 
     playState = PlayState.playing;
     score.value = 0;
@@ -180,16 +195,31 @@ class BrickBreaker extends FlameGame
 
   void _startTimer() {
     _timer?.cancel();
+    _timer = null;
+    
     _timer = async.Timer.periodic(const Duration(seconds: 1), (timer) {
+      // Verificar que el juego sigue en estado playing
       if (playState != PlayState.playing) {
         timer.cancel();
+        _timer = null;
         return;
       }
 
-      timeRemaining.value--;
-      
-      if (timeRemaining.value <= 0) {
+      // Actualizar tiempo restante de forma segura
+      final currentTime = timeRemaining.value;
+      if (currentTime > 0) {
+        timeRemaining.value = currentTime - 1;
+        
+        // Si el tiempo llegó a 0, manejar fin del tiempo
+        if (timeRemaining.value <= 0) {
+          timer.cancel();
+          _timer = null;
+          _onTimeUp();
+        }
+      } else {
+        // Si ya está en 0, cancelar y llamar a _onTimeUp
         timer.cancel();
+        _timer = null;
         _onTimeUp();
       }
     });
@@ -210,8 +240,6 @@ class BrickBreaker extends FlameGame
   }
 
   Future<void> onBrickDestroyed() async {
-    // Cancelar temporizador al completar el nivel
-    _timer?.cancel();
     // Verificar si se ganó el nivel
     final remainingBricks = world.children.query<Brick>();
     if (remainingBricks.isEmpty) {
@@ -240,6 +268,9 @@ class BrickBreaker extends FlameGame
         }
       }
 
+      // Cancelar temporizador solo cuando se completa el nivel
+      _timer?.cancel();
+      _timer = null;
       playState = PlayState.won;
     }
   }
@@ -293,9 +324,108 @@ class BrickBreaker extends FlameGame
   @override
   Color backgroundColor() => const Color(0xfff2e8cf);
 
+  // Generar power-up en una posición
+  void spawnPowerUp(Vector2 position) {
+    if (playState != PlayState.playing) return;
+    
+    // Seleccionar un power-up aleatorio
+    final powerUpTypes = PowerUpType.values;
+    final randomType = powerUpTypes[rand.nextInt(powerUpTypes.length)];
+    
+    world.add(
+      PowerUp(
+        type: randomType,
+        position: position,
+      ),
+    );
+  }
+
+  // Aplicar un power-up
+  void applyPowerUp(PowerUpType type) {
+    switch (type) {
+      case PowerUpType.tripleBall:
+        _applyTripleBall();
+        break;
+      case PowerUpType.curvedBat:
+        _applyCurvedBat();
+        break;
+      case PowerUpType.extendedBat:
+        _applyExtendedBat();
+        break;
+    }
+  }
+
+  void _applyTripleBall() {
+    final balls = world.children.query<Ball>();
+    if (balls.isEmpty) return;
+    
+    final originalBall = balls.first;
+    final velocity = originalBall.velocity;
+    final position = originalBall.position;
+    final color = originalBall.paint.color;
+    
+    // Crear 2 pelotas adicionales con velocidades ligeramente diferentes
+    for (int i = 0; i < 2; i++) {
+      final angle = (i + 1) * 0.3; // Ángulo de separación
+      final newVelocity = Vector2(
+        velocity.x * math.cos(angle) - velocity.y * math.sin(angle),
+        velocity.x * math.sin(angle) + velocity.y * math.cos(angle),
+      ).normalized()..scale(velocity.length);
+      
+      world.add(
+        Ball(
+          difficultyModifier: originalBall.difficultyModifier,
+          radius: ballRadius,
+          position: position + Vector2((i - 1) * 20, 0),
+          velocity: newVelocity,
+          color: color,
+        ),
+      );
+    }
+  }
+
+  void _applyCurvedBat() {
+    // Cancelar timer anterior si existe
+    _curvedBatTimer?.cancel();
+    _curvedBatActive = true;
+    
+    // Aplicar efecto curvo al bate
+    final bat = world.children.query<Bat>().firstOrNull;
+    if (bat != null) {
+      bat.setCurved(true);
+    }
+    
+    // El efecto dura hasta que se cancele manualmente o termine el nivel
+    // No tiene duración fija, permanece activo
+  }
+
+  void _applyExtendedBat() {
+    // Cancelar timer anterior si existe
+    _extendedBatTimer?.cancel();
+    _extendedBatActive = true;
+    
+    // Aplicar efecto extendido al bate
+    final bat = world.children.query<Bat>().firstOrNull;
+    if (bat != null) {
+      bat.setExtended(true);
+    }
+    
+    // El efecto dura 30 segundos
+    _extendedBatTimer = async.Timer(const Duration(seconds: 30), () {
+      _extendedBatActive = false;
+      final bat = world.children.query<Bat>().firstOrNull;
+      if (bat != null) {
+        bat.setExtended(false);
+      }
+      _extendedBatTimer = null;
+    });
+  }
+
   @override
   void onRemove() {
     _timer?.cancel();
+    _curvedBatTimer?.cancel();
+    _extendedBatTimer?.cancel();
     super.onRemove();
   }
 }

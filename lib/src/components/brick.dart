@@ -26,7 +26,13 @@ class Brick extends RectangleComponent
   ) {
     super.onCollisionStart(intersectionPoints, other);
     removeFromParent();
+    final oldScore = game.score.value;
     game.score.value++;
+
+    // Generar power-up cada 30 puntos
+    if (game.score.value % 30 == 0 && game.score.value > oldScore) {
+      game.spawnPowerUp(position);
+    }
 
     // Verificar si se ganó el nivel
     game.onBrickDestroyed();

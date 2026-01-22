@@ -65,10 +65,25 @@ class Ball extends CircleComponent
         );
       }
     } else if (other is Bat) {
-      velocity.y = -velocity.y;
-      velocity.x =
-          velocity.x +
-          (position.x - other.position.x) / other.size.x * game.width * 0.3;
+      final bat = other as Bat;
+      
+      if (bat.isCurved) {
+        // Física especial para bate curvo
+        // El rebote es más pronunciado hacia el centro
+        final centerX = bat.position.x;
+        final distanceFromCenter = position.x - centerX;
+        final normalizedDistance = distanceFromCenter / (bat.size.x / 2);
+        
+        // Rebote más pronunciado
+        velocity.y = -velocity.y.abs();
+        velocity.x = velocity.x + normalizedDistance * game.width * 0.5;
+      } else {
+        // Física normal
+        velocity.y = -velocity.y;
+        velocity.x =
+            velocity.x +
+            (position.x - other.position.x) / other.size.x * game.width * 0.3;
+      }
     } else if (other is Brick) {
       if (position.y < other.position.y - other.size.y / 2) {
         velocity.y = -velocity.y;

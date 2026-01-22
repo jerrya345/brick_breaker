@@ -135,8 +135,8 @@ class _GameAppState extends State<GameApp> {
                       ],
                     ),
                     const SizedBox(height: 8),
-                    // Score card
-                    ScoreCard(score: game.score),
+                    // Score card con temporizador
+                    ScoreCard(score: game.score, game: game),
                     // Game widget con HUD
                     Expanded(
                       child: Stack(
